@@ -3,6 +3,11 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+def defaultVersionCode = 8
+def defaultVersionName = "4.2"
+def ciVersionCode = project.findProperty("CI_VERSION_CODE")?.toString()
+def ciVersionName = project.findProperty("CI_VERSION_NAME")?.toString()
+
 android {
     namespace 'me.bingyue.fuckbiliads'
     compileSdk 34
@@ -11,8 +16,8 @@ android {
         applicationId "me.bingyue.fuckbiliads"
         minSdk 27
         targetSdk 34
-        versionCode 8
-        versionName "4.2"
+        versionCode(ciVersionCode ? ciVersionCode.toInteger() : defaultVersionCode)
+        versionName(ciVersionName ?: defaultVersionName)
 
     }
 

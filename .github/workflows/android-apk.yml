@@ -1,0 +1,94 @@
+name: Android APK Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Override versionName (optional)"
+        required: false
+        default: ""
+      version_code:
+        description: "Override versionCode (optional, integer)"
+        required: false
+        default: ""
+      release_tag:
+        description: "GitHub Release tag, e.g. v4.2.1 (optional)"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission
+        run: chmod +x ./gradlew
+
+      - name: Build release APK
+        env:
+          INPUT_VERSION_NAME: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version_name || '' }}
+          INPUT_VERSION_CODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version_code || '' }}
+        run: |
+          ARGS=(--no-daemon clean assembleRelease)
+          if [ -n "$INPUT_VERSION_NAME" ]; then
+            ARGS+=("-PCI_VERSION_NAME=$INPUT_VERSION_NAME")
+          fi
+          if [ -n "$INPUT_VERSION_CODE" ]; then
+            ARGS+=("-PCI_VERSION_CODE=$INPUT_VERSION_CODE")
+          fi
+          ./gradlew "${ARGS[@]}"
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK_PATH="$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)"
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK found" >&2
+            exit 1
+          fi
+          echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: ${{ steps.apk.outputs.path }}
+
+      - name: Resolve release tag
+        id: release_tag
+        env:
+          INPUT_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || '' }}
+        run: |
+          TAG=""
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${{ github.ref_name }}"
+          elif [ -n "$INPUT_RELEASE_TAG" ]; then
+            TAG="$INPUT_RELEASE_TAG"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.release_tag.outputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          name: ${{ steps.release_tag.outputs.tag }}
+          files: ${{ steps.apk.outputs.path }}
